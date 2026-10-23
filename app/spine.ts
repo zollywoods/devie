@@ -499,7 +499,7 @@ function packInfo(
       ribIndex += 1;
     }
 
-    let remain = paragraph;
+    let remain: string = paragraph;
     while (remain) {
       if (ribIndex >= RIB_WIDTHS.length) {
         return null;

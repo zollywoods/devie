@@ -80,24 +80,24 @@ function FitStage({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const frame = frameRef.current;
-    const inner = innerRef.current;
-    if (!frame || !inner) {
-      return;
-    }
-
     function fit() {
+      const frameEl = frameRef.current;
+      const innerEl = innerRef.current;
+      if (!frameEl || !innerEl) {
+        return;
+      }
+
       const compact = window.matchMedia("(max-width: 767px)").matches;
-      const frameBox = frame.getBoundingClientRect();
-      const styles = getComputedStyle(frame);
+      const frameBox = frameEl.getBoundingClientRect();
+      const styles = getComputedStyle(frameEl);
       const padX =
         parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
       const padY =
         parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
       const availW = Math.max(0, frameBox.width - padX);
       const availH = Math.max(0, frameBox.height - padY);
-      const naturalW = inner.offsetWidth;
-      const naturalH = inner.offsetHeight;
+      const naturalW = innerEl.offsetWidth;
+      const naturalH = innerEl.offsetHeight;
       if (!naturalW || !naturalH || !availW || !availH) {
         return;
       }
@@ -107,9 +107,15 @@ function FitStage({ children }: { children: React.ReactNode }) {
       setReady(true);
     }
 
+    const frameEl = frameRef.current;
+    const innerEl = innerRef.current;
+    if (!frameEl || !innerEl) {
+      return;
+    }
+
     const observer = new ResizeObserver(fit);
-    observer.observe(frame);
-    observer.observe(inner);
+    observer.observe(frameEl);
+    observer.observe(innerEl);
     window.addEventListener("resize", fit);
     fit();
     return () => {
