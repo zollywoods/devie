@@ -144,20 +144,27 @@ function FitStage({ children }: { children: React.ReactNode }) {
   );
 }
 
-function VertebraScrollbar() {
+function VertebraScrollbar({
+  scrollerRef,
+}: {
+  scrollerRef: React.RefObject<HTMLDivElement | null>;
+}) {
   const trackRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const [progress, setProgress] = useState(0);
   const [thumbRatio, setThumbRatio] = useState(0.2);
 
   useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) {
+      return;
+    }
+    const el = scroller;
+
     function measure() {
-      const root = document.documentElement;
-      const max = root.scrollHeight - root.clientHeight;
-      setThumbRatio(
-        root.scrollHeight <= 0 ? 1 : root.clientHeight / root.scrollHeight,
-      );
-      setProgress(max <= 0 ? 0 : root.scrollTop / max);
+      const max = el.scrollHeight - el.clientHeight;
+      setThumbRatio(el.scrollHeight <= 0 ? 1 : el.clientHeight / el.scrollHeight);
+      setProgress(max <= 0 ? 0 : el.scrollTop / max);
     }
 
     function onScroll() {
@@ -168,17 +175,18 @@ function VertebraScrollbar() {
     }
 
     measure();
-    window.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", measure);
     return () => {
-      window.removeEventListener("scroll", onScroll);
+      el.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", measure);
     };
-  }, []);
+  }, [scrollerRef]);
 
   function seek(clientY: number, smooth: boolean) {
     const track = trackRef.current;
-    if (!track) {
+    const scroller = scrollerRef.current;
+    if (!track || !scroller) {
       return;
     }
 
@@ -187,10 +195,9 @@ function VertebraScrollbar() {
       1,
       Math.max(0, (clientY - rect.top) / rect.height),
     );
-    const root = document.documentElement;
-    const max = root.scrollHeight - root.clientHeight;
+    const max = scroller.scrollHeight - scroller.clientHeight;
     setProgress(ratio);
-    window.scrollTo({ top: ratio * max, behavior: smooth ? "smooth" : "auto" });
+    scroller.scrollTo({ top: ratio * max, behavior: smooth ? "smooth" : "auto" });
   }
 
   useEffect(() => {
@@ -225,7 +232,7 @@ function VertebraScrollbar() {
       aria-valuenow={Math.round(progress * 100)}
       aria-valuemin={0}
       aria-valuemax={100}
-      className="pointer-events-auto absolute left-1/2 z-20 w-[1.1ch] -translate-x-1/2 cursor-ns-resize"
+      className="pointer-events-none absolute left-1/2 z-20 w-[1.1ch] -translate-x-1/2 cursor-ns-resize [@media(pointer:fine)]:pointer-events-auto"
       style={{ top: "1.2em", bottom: "8.4em" }}
       onPointerDown={(event) => {
         dragging.current = true;
@@ -255,112 +262,81 @@ export function SpineShowcase({
   const [eventIndex, setEventIndex] = useState(0);
   const [showInfo, setShowInfo] = useState(false);
   const sectionRefs = useRef<Array<HTMLElement | null>>([]);
-  const spineRef = useRef<HTMLDivElement>(null);
-  const ignoreObserver = useRef(false);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const pendingTarget = useRef<number | null>(null);
+  const pendingTimer = useRef<number | undefined>(undefined);
 
   const goTo = useCallback(
     (index: number) => {
-      if (index < 0 || index >= productions.length) {
+      const scroller = scrollerRef.current;
+      const section = sectionRefs.current[index];
+      if (index < 0 || index >= productions.length || !scroller || !section) {
         return;
       }
-      const next = index;
-      ignoreObserver.current = true;
+      pendingTarget.current = index;
+      window.clearTimeout(pendingTimer.current);
+      pendingTimer.current = window.setTimeout(() => {
+        pendingTarget.current = null;
+      }, 1500);
       setShowInfo(false);
-      setActive(next);
-      sectionRefs.current[next]?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-      window.setTimeout(() => {
-        ignoreObserver.current = false;
-      }, 700);
+      setActive(index);
+      scroller.scrollTo({ top: section.offsetTop, behavior: "smooth" });
     },
     [productions.length],
   );
 
   useEffect(() => {
-    const coarse = window.matchMedia("(pointer: coarse)");
-    let start: { x: number; y: number } | null = null;
-
-    function onTouchStart(event: TouchEvent) {
-      start = null;
-      const touch = event.touches[0];
-      const spine = spineRef.current?.getBoundingClientRect();
-      if (!coarse.matches || !touch || !spine) {
+    function onWheel(event: WheelEvent) {
+      const scroller = scrollerRef.current;
+      if (!scroller || scroller.contains(event.target as Node)) {
         return;
       }
-      if ((event.target as Element | null)?.closest('[role="scrollbar"]')) {
-        return;
-      }
-      const inside =
-        touch.clientX >= spine.left &&
-        touch.clientX <= spine.right &&
-        touch.clientY >= spine.top &&
-        touch.clientY <= spine.bottom;
-      if (inside) {
-        start = { x: touch.clientX, y: touch.clientY };
-      }
+      scroller.scrollBy({ top: event.deltaY });
     }
 
-    function onTouchMove(event: TouchEvent) {
-      if (coarse.matches && event.cancelable) {
-        event.preventDefault();
-      }
-    }
-
-    function onTouchEnd(event: TouchEvent) {
-      const touch = event.changedTouches[0];
-      if (!start || !touch) {
-        return;
-      }
-      const dy = start.y - touch.clientY;
-      const dx = start.x - touch.clientX;
-      start = null;
-      if (Math.abs(dy) < 30 || Math.abs(dy) < Math.abs(dx)) {
-        return;
-      }
-      goTo(dy > 0 ? active + 1 : active - 1);
-    }
-
-    window.addEventListener("touchstart", onTouchStart, { passive: true });
-    window.addEventListener("touchmove", onTouchMove, { passive: false });
-    window.addEventListener("touchend", onTouchEnd);
-    return () => {
-      window.removeEventListener("touchstart", onTouchStart);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", onTouchEnd);
-    };
-  }, [active, goTo]);
+    window.addEventListener("wheel", onWheel, { passive: true });
+    return () => window.removeEventListener("wheel", onWheel);
+  }, []);
 
   useEffect(() => {
-    const sections = sectionRefs.current.filter(
-      (section): section is HTMLElement => section !== null,
-    );
+    const scroller = scrollerRef.current;
+    if (!scroller) {
+      return;
+    }
+    const el = scroller;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    function onScroll() {
+      const height = el.clientHeight;
+      if (!height) {
+        return;
+      }
+      const index = Math.min(
+        productions.length - 1,
+        Math.max(0, Math.round(el.scrollTop / height)),
+      );
 
-        if (!visible) {
+      const target = pendingTarget.current;
+      if (target !== null) {
+        if (Math.abs(el.scrollTop - target * height) > 2) {
           return;
         }
+        pendingTarget.current = null;
+      }
+      setActive(index);
+    }
 
-        if (ignoreObserver.current) {
-          return;
-        }
+    function onUserScroll() {
+      pendingTarget.current = null;
+    }
 
-        const index = Number((visible.target as HTMLElement).dataset.index);
-        if (!Number.isNaN(index)) {
-          setActive(index);
-        }
-      },
-      { threshold: [0.45, 0.6, 0.8] },
-    );
-
-    sections.forEach((section) => observer.observe(section));
-    return () => observer.disconnect();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("touchstart", onUserScroll, { passive: true });
+    el.addEventListener("wheel", onUserScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("touchstart", onUserScroll);
+      el.removeEventListener("wheel", onUserScroll);
+    };
   }, [productions.length]);
 
   useEffect(() => {
@@ -430,8 +406,30 @@ export function SpineShowcase({
             sizes="(min-width: 768px) 15rem, (min-width: 640px) 13rem, 11rem"
             className="mt-2 -mb-px h-auto w-44 sm:w-52 md:w-60 dark:invert"
           />
-          <div ref={spineRef} className="relative w-max font-mono text-[clamp(10px,min(1.15vw,1.85vh),12px)] leading-[1.16]">
-          <pre className="overflow-hidden">
+          <div className="relative w-max font-mono text-[clamp(10px,min(1.15vw,1.85vh),12px)] leading-[1.16]">
+          <div
+            ref={scrollerRef}
+            className="pointer-events-auto absolute inset-0 z-0 snap-y snap-mandatory overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {productions.map((item, index) => (
+              <section
+                key={item.id}
+                id={item.id}
+                ref={(element) => {
+                  sectionRefs.current[index] = element;
+                }}
+                data-index={index}
+                className="h-full snap-start snap-always"
+                aria-label={item.title}
+              >
+                <article className="sr-only">
+                  <h2>{item.title}</h2>
+                  <p>{productionCopy(item, index === active ? safeEventIndex : 0)}</p>
+                </article>
+              </section>
+            ))}
+          </div>
+          <pre className="relative z-10 overflow-hidden">
             {lines.map((line, lineIndex) => (
               <Fragment key={lineIndex}>
                 {line.map((segment, segmentIndex) => (
@@ -451,29 +449,9 @@ export function SpineShowcase({
               {COMPANY_INFO.join(" ")}
             </p>
           ) : null}
-          <VertebraScrollbar />
+          <VertebraScrollbar scrollerRef={scrollerRef} />
           </div>
       </FitStage>
-
-      <div>
-        {productions.map((item, index) => (
-          <section
-            key={item.id}
-            id={item.id}
-            ref={(element) => {
-              sectionRefs.current[index] = element;
-            }}
-            data-index={index}
-            className="h-dvh snap-start"
-            aria-label={item.title}
-          >
-            <article className="sr-only">
-              <h2>{item.title}</h2>
-              <p>{productionCopy(item, index === active ? safeEventIndex : 0)}</p>
-            </article>
-          </section>
-        ))}
-      </div>
     </div>
   );
 }

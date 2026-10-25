@@ -33,10 +33,9 @@ html::-webkit-scrollbar {
   display: none;
 }
 
-@media (pointer: coarse) {
-  html,
-  body {
-    overscroll-behavior: none;
-    touch-action: none;
-  }
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
