@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { Production } from "./performances";
 import {
   COMPANY_INFO,
@@ -255,7 +255,82 @@ export function SpineShowcase({
   const [eventIndex, setEventIndex] = useState(0);
   const [showInfo, setShowInfo] = useState(false);
   const sectionRefs = useRef<Array<HTMLElement | null>>([]);
+  const spineRef = useRef<HTMLDivElement>(null);
   const ignoreObserver = useRef(false);
+
+  const goTo = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= productions.length) {
+        return;
+      }
+      const next = index;
+      ignoreObserver.current = true;
+      setShowInfo(false);
+      setActive(next);
+      sectionRefs.current[next]?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      window.setTimeout(() => {
+        ignoreObserver.current = false;
+      }, 700);
+    },
+    [productions.length],
+  );
+
+  useEffect(() => {
+    const coarse = window.matchMedia("(pointer: coarse)");
+    let start: { x: number; y: number } | null = null;
+
+    function onTouchStart(event: TouchEvent) {
+      start = null;
+      const touch = event.touches[0];
+      const spine = spineRef.current?.getBoundingClientRect();
+      if (!coarse.matches || !touch || !spine) {
+        return;
+      }
+      if ((event.target as Element | null)?.closest('[role="scrollbar"]')) {
+        return;
+      }
+      const inside =
+        touch.clientX >= spine.left &&
+        touch.clientX <= spine.right &&
+        touch.clientY >= spine.top &&
+        touch.clientY <= spine.bottom;
+      if (inside) {
+        start = { x: touch.clientX, y: touch.clientY };
+      }
+    }
+
+    function onTouchMove(event: TouchEvent) {
+      if (coarse.matches && event.cancelable) {
+        event.preventDefault();
+      }
+    }
+
+    function onTouchEnd(event: TouchEvent) {
+      const touch = event.changedTouches[0];
+      if (!start || !touch) {
+        return;
+      }
+      const dy = start.y - touch.clientY;
+      const dx = start.x - touch.clientX;
+      start = null;
+      if (Math.abs(dy) < 30 || Math.abs(dy) < Math.abs(dx)) {
+        return;
+      }
+      goTo(dy > 0 ? active + 1 : active - 1);
+    }
+
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onTouchEnd);
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [active, goTo]);
 
   useEffect(() => {
     const sections = sectionRefs.current.filter(
@@ -323,17 +398,6 @@ export function SpineShowcase({
     showInfo ? "info" : "production",
   );
 
-  function goTo(index: number) {
-    const next = (index + productions.length) % productions.length;
-    ignoreObserver.current = true;
-    setShowInfo(false);
-    setActive(next);
-    sectionRefs.current[next]?.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.setTimeout(() => {
-      ignoreObserver.current = false;
-    }, 700);
-  }
-
   function onAction(action: SpineAction) {
     if (action === "info") {
       setShowInfo(true);
@@ -366,7 +430,7 @@ export function SpineShowcase({
             sizes="(min-width: 768px) 15rem, (min-width: 640px) 13rem, 11rem"
             className="mt-2 -mb-px h-auto w-44 sm:w-52 md:w-60 dark:invert"
           />
-          <div className="relative w-max font-mono text-[clamp(10px,min(1.15vw,1.85vh),12px)] leading-[1.16]">
+          <div ref={spineRef} className="relative w-max font-mono text-[clamp(10px,min(1.15vw,1.85vh),12px)] leading-[1.16]">
           <pre className="overflow-hidden">
             {lines.map((line, lineIndex) => (
               <Fragment key={lineIndex}>
